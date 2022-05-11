@@ -1,0 +1,300 @@
+
+
+Resources:
+  # VPC
+  CloudProjectVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: CloudProjectVPC
+
+  # Subnets
+  CloudPublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref CloudProjectVPC
+      AvailabilityZone: us-east-1a
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: CloudProjectPublicSubnet
+
+  CloudPrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref CloudProjectVPC
+      AvailabilityZone: us-east-1a
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: CloudProjectPrivateSubnet
+
+  # INTERNET GATEWAY
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  GatewayToInternet:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref CloudProjectVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # PUBLIC ROUTING
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref CloudProjectVPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayToInternet
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  CloudPublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref CloudPublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # NAT GATEWAY
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn: NatPublicIP
+    Properties:
+      SubnetId: !Ref CloudPublicSubnet
+      AllocationId: !GetAtt NatPublicIP.AllocationId
+
+  # ELASTIC IP
+  NatPublicIP:
+    Type: AWS::EC2::EIP
+    DependsOn: CloudProjectVPC
+    Properties:
+      Domain: vpc
+
+  # PRIVATE ROUTING
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref CloudProjectVPC
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      NatGatewayId: !Ref NatGateway
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+
+  CloudPrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref CloudPrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  CloudPublicSubnetSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Allow SSH, HTTP, HTTPS and custom TCP from anywhere
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref CloudProjectVPC
+
+  CloudPrivateSubnetSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Allow access from public subnet
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 10.0.1.0/24
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.1.0/24
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 10.0.1.0/24
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          CidrIp: 10.0.1.0/24
+      VpcId: !Ref CloudProjectVPC
+
+  CloudProjectPublicEC2:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: XIaoKeyProject
+      ImageId: ami-0742b4e673072066f
+      InstanceType: t2.micro
+      SubnetId: !Ref CloudPublicSubnet
+      SecurityGroupIds:
+        - !Ref CloudPublicSubnetSecurityGroup
+      Tags:
+        - Key: Name
+          Value: CloudProjectPublicEC2
+
+  # DynamoDB
+  productTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: "id"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "id"
+          KeyType: "HASH"
+      TableName: "Clouds-products"
+      ProvisionedThroughput:
+        ReadCapacityUnits: "20"
+        WriteCapacityUnits: "20"
+
+  purchaseTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: "id"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "id"
+          KeyType: "HASH"
+      TableName: "Cloud-purchases"
+      ProvisionedThroughput:
+        ReadCapacityUnits: "20"
+        WriteCapacityUnits: "20"
+
+  userTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: "email"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "email"
+          KeyType: "HASH"
+      TableName: "Cloud-users"
+      ProvisionedThroughput:
+        ReadCapacityUnits: "20"
+        WriteCapacityUnits: "20"
+
+  # Beanstalk
+  CloudProjectBeanstalk:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties:
+      Description: Beanstalk to hold EC2
+  CloudProjectBeanstalkVersion:
+    Type: AWS::ElasticBeanstalk::ApplicationVersion
+    Properties:
+      ApplicationName:
+        Ref: CloudProjectBeanstalk
+      Description: CloudProjectBeanstalk app v1
+      SourceBundle:
+        S3Bucket: cloud-project-group61
+        S3Key: docker-compose.yml
+  BeanStalkConfigurationTemplate:
+    Type: AWS::ElasticBeanstalk::ConfigurationTemplate
+    Properties:
+      ApplicationName:
+        Ref: CloudProjectBeanstalk
+      SolutionStackName: "64bit Amazon Linux 2 v3.4.13 running Docker"
+      OptionSettings:
+        - Namespace: aws:ec2:vpc
+          OptionName: VPCId
+          Value: !Ref CloudProjectVPC
+        - Namespace: aws:ec2:vpc
+          OptionName: Subnets
+          Value: !Ref CloudPublicSubnet
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: LabInstanceProfile
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: SecurityGroups
+          Value: !Ref CloudPublicSubnetSecurityGroup
+  DevEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties:
+      ApplicationName:
+        Ref: CloudProjectBeanstalk
+      Description: Development environment
+      TemplateName:
+        Ref: BeanStalkConfigurationTemplate
+      VersionLabel:
+        Ref: CloudProjectBeanstalkVersion
+
+
+  #Cognito
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: "group61cloudprojectpool"
+      UsernameAttributes:
+        - email
+      UsernameConfiguration:
+        CaseSensitive: False
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+          - Name: verified_phone_number
+            Priority: 2
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: False
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: True
+          RequireUppercase: True
+          RequireSymbols: True
+          RequireNumbers: True
+      AutoVerifiedAttributes:
+        - email
+      VerificationMessageTemplate:
+        DefaultEmailOption: "CONFIRM_WITH_LINK"
+  CognitoClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: websitecreatedcloud
+      GenerateSecret: False
+      UserPoolId: !Ref CognitoUserPool
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      SupportedIdentityProviders:
+        - COGNITO
+      ExplicitAuthFlows:
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: True
+  CognitoDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: group61cloudprojectpool
+      UserPoolId: !Ref CognitoUserPool
+
+
+# Referece: https://gist.github.com/jbesw/f9401b4c52a7446ef1bb71ceea8cc3e8

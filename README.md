@@ -9,7 +9,7 @@ This is the backend of a simplified E-Commerce Web application. It is fully depl
 
 ## Authors
 
-* Xiao Ling, B00877105, xz540782@dal.ca
+* Xiao Ling, xsling28@gmail.com
 
 ## Built With
 
